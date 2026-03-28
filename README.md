@@ -1,3 +1,8 @@
+  ABOUT
+  ------------
+  The code for this project was writted exlusively by Claude Code.
+  The creation of every feature was directed by Sam Rodgers.
+
 ================================================================================
   PhotoPicker Toolkit
 ================================================================================
