@@ -59,7 +59,7 @@ TOOLS = [
         'desc': 'Split a folder into raw/, jpeg/, and video/ subfolders.\nSkip if your photos are already separated.',
         'script': 'separate_raws.py',
         'color': ACCENT,
-        'inputs': [('folder', 'Folder to organize  (select any photo inside it)', 'file')],
+        'inputs': [('folder', 'Folder to organize', 'file')],
         'flags':  [('copy', '--copy', 'Copy instead of move (keeps originals)')],
         'build':  lambda v, fl: [v['folder']] + fl,
         'detach': False,
@@ -71,7 +71,7 @@ TOOLS = [
         'script': 'photopicker.py',
         'color': ACCENT,
         'inputs': [
-            ('folder', 'Photo folder  (select any photo inside it)', 'file'),
+            ('folder', 'Photo folder', 'file'),
             ('output', 'Output folder  (optional — leave blank for folder/selected/)', 'folder'),
         ],
         'flags':  [('move', '--move', 'Move flagged photos instead of copying')],
@@ -89,8 +89,8 @@ TOOLS = [
         'script': 'get_raws.py',
         'color': ACCENT,
         'inputs': [
-            ('jpeg',   'JPEG picks folder  (select any photo inside it)', 'file'),
-            ('raws',   'RAW source folder  (select any RAW inside it)',   'file'),
+            ('jpeg',   'JPEG picks folder', 'file'),
+            ('raws',   'RAW source folder',   'file'),
             ('output', 'Output folder',                                   'folder'),
         ],
         'flags':  [],
@@ -104,8 +104,8 @@ TOOLS = [
         'script': 'verify_copy.py',
         'color': ACCENT,
         'inputs': [
-            ('source', 'Source folder  (select any file inside it)', 'file'),
-            ('dest',   'Destination folder  (select any file inside it)', 'file'),
+            ('source', 'Source folder', 'file'),
+            ('dest',   'Destination folder', 'file'),
         ],
         'flags':  [],
         'build':  lambda v, fl: [v['source'], v['dest']],
@@ -117,7 +117,7 @@ TOOLS = [
         'desc': 'Rename files to YYYY-MM-DD_HHMMSS using their EXIF shoot date.',
         'script': 'rename_by_date.py',
         'color': UTIL_CLR,
-        'inputs': [('folder', 'Folder to rename  (select any file inside it)', 'file')],
+        'inputs': [('folder', 'Folder to rename', 'file')],
         'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no changes')],
         'build':  lambda v, fl: [v['folder']] + fl,
         'detach': False,
@@ -129,8 +129,8 @@ TOOLS = [
         'script': 'diff_folders.py',
         'color': UTIL_CLR,
         'inputs': [
-            ('full',   'Full folder  (select any photo inside it)',  'file'),
-            ('picks',  'Picks folder  (select any photo inside it)', 'file'),
+            ('full',   'Full folder',  'file'),
+            ('picks',  'Picks folder', 'file'),
             ('output', 'Output folder',                              'folder'),
         ],
         'flags':  [],
@@ -238,17 +238,6 @@ TUTORIAL_STEPS = [
 
 # ─────────────────────────── FolderInput ─────────────────────────────────────
 
-_IMAGE_TYPES = [
-    ('Image files',
-     ' '.join(f'*{e}' for e in (
-         '.jpg .jpeg .png .tiff .tif .webp .heic .heif .bmp .gif '
-         '.crw .cr2 .cr3 .nef .nrw .arw .srf .sr2 .raf .orf .rw2 '
-         '.pef .ptx .srw .rwl .dng .3fr .fff .iiq .x3f .dcr .kdc '
-         '.mrw .gpr .bay .erf .mef .mos'
-     ).split())),
-    ('All files', '*.*'),
-]
-
 
 class FolderInput(tk.Frame):
     """Label + text entry + Browse button for selecting a folder.
@@ -283,17 +272,9 @@ class FolderInput(tk.Frame):
         ).pack(side='left', padx=(4, 0))
 
     def _browse(self):
-        if self._mode == 'file':
-            path = filedialog.askopenfilename(
-                title='Select any file inside the folder',
-                filetypes=_IMAGE_TYPES,
-            )
-            if path:
-                self._var.set(str(Path(path).parent))
-        else:
-            path = filedialog.askdirectory(title='Select folder')
-            if path:
-                self._var.set(path)
+        path = filedialog.askdirectory(title='Select folder')
+        if path:
+            self._var.set(path)
 
     def get(self):
         return self._var.get().strip()
@@ -314,6 +295,34 @@ class ToolCard(tk.Frame):
         body = tk.Frame(self, bg=CARD_BG)
         body.pack(fill='both', expand=True, padx=12, pady=(8, 10))
 
+        # Pack the log and run button with side='bottom' first so they are
+        # always anchored at the card bottom regardless of card height.
+        self._log = tk.Text(
+            body, height=5, bg='#18181b', fg='#71717a',
+            font=('Consolas', 8), relief='flat', state='disabled',
+            wrap='word', bd=6, cursor='arrow',
+        )
+        self._log.pack(side='bottom', fill='x', pady=(4, 0))
+
+        bottom = tk.Frame(body, bg=CARD_BG)
+        bottom.pack(side='bottom', fill='x', pady=(10, 4))
+
+        self._run_btn = tk.Button(
+            bottom, text='Run', bg=cfg['color'], fg='white', relief='flat',
+            font=(FN, 9, 'bold'), cursor='hand2', bd=0, padx=18, pady=5,
+            activebackground=cfg['color'], activeforeground='white',
+            command=self._run,
+        )
+        self._run_btn.pack(side='left')
+
+        self._status_var = tk.StringVar()
+        self._status_lbl = tk.Label(
+            bottom, textvariable=self._status_var,
+            bg=CARD_BG, fg=MUTED, font=(FN, 8), anchor='w',
+        )
+        self._status_lbl.pack(side='left', padx=(10, 0))
+
+        # Title, description, inputs, and flags fill from the top.
         tk.Label(body, text=cfg['title'], bg=CARD_BG, fg=TEXT,
                  font=(FN, 10, 'bold'), anchor='w').pack(anchor='w')
         tk.Label(body, text=cfg['desc'], bg=CARD_BG, fg=MUTED,
@@ -339,33 +348,6 @@ class ToolCard(tk.Frame):
                 font=(FN, 8), cursor='hand2',
             ).pack(anchor='w', pady=(4, 0))
             self._flag_vars[key] = (var, flag)
-
-        # Run button + status label
-        bottom = tk.Frame(body, bg=CARD_BG)
-        bottom.pack(fill='x', pady=(10, 4))
-
-        self._run_btn = tk.Button(
-            bottom, text='Run', bg=cfg['color'], fg='white', relief='flat',
-            font=(FN, 9, 'bold'), cursor='hand2', bd=0, padx=18, pady=5,
-            activebackground=cfg['color'], activeforeground='white',
-            command=self._run,
-        )
-        self._run_btn.pack(side='left')
-
-        self._status_var = tk.StringVar()
-        self._status_lbl = tk.Label(
-            bottom, textvariable=self._status_var,
-            bg=CARD_BG, fg=MUTED, font=(FN, 8), anchor='w',
-        )
-        self._status_lbl.pack(side='left', padx=(10, 0))
-
-        # Output log (read-only Text widget)
-        self._log = tk.Text(
-            body, height=3, bg='#18181b', fg='#71717a',
-            font=('Consolas', 8), relief='flat', state='disabled',
-            wrap='word', bd=6, cursor='arrow',
-        )
-        self._log.pack(fill='x', pady=(4, 0))
 
     # ── run ───────────────────────────────────────────────────────────────────
 

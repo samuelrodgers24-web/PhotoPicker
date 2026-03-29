@@ -78,6 +78,7 @@ def main():
         sys.exit(0)
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Found {len(matched)} matching RAW file{'s' if len(matched) != 1 else ''}. Copying...")
 
     xmp_count = 0
     for raw, xmp in matched:
