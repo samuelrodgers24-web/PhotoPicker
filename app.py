@@ -2,8 +2,8 @@
 """
 app.py — PhotoPicker toolkit dashboard.
 
-A GUI launcher for the full toolkit. Each card represents one script.
-photopicker.py is always launched as a detached process to preserve performance.
+Landing page shows nav buttons for every tool. Clicking one opens that tool's
+page. photopicker.py is always launched as a detached process.
 
 Usage:
     python app.py
@@ -14,65 +14,106 @@ import subprocess
 import threading
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 SCRIPT_DIR = Path(__file__).parent
 
 # ─────────────────────────── palette ─────────────────────────────────────────
 BG         = '#18181b'
 CARD_BG    = '#27272a'
+HOVER_BG   = '#2f2f32'
 TEXT       = '#f4f4f5'
 MUTED      = '#a1a1aa'
-ACCENT     = '#3b82f6'    # blue  — main workflow cards
-UTIL_CLR   = '#8b5cf6'    # purple — utility cards
+ACCENT     = '#3b82f6'
+UTIL_CLR   = '#8b5cf6'
+DANGER_CLR = '#ef4444'
 SUCCESS    = '#22c55e'
 ERROR_CLR  = '#ef4444'
 BTN_BG     = '#3f3f46'
 BTN_ACTIVE = '#52525b'
+DIVIDER    = '#3f3f46'
 
-TUT_HL     = '#f59e0b'    # amber — tutorial highlight / arrows
-TUT_BG     = '#1c1917'    # dark  — caption background
-TUT_FG     = '#fef3c7'    # cream — caption text
-
-# Near-white used as the transparency key for the tutorial spotlight overlay.
-# Must not appear as a natural color in any widget within the overlay window.
-_TKEY = '#FEFEFE'
+TUT_HL  = '#f59e0b'
+TUT_BG  = '#1c1917'
+TUT_FG  = '#fef3c7'
+_TKEY   = '#FEFEFE'
 
 FN = 'Segoe UI'
 
 # ─────────────────────────── tool definitions ─────────────────────────────────
 #
-# inputs : list of (key, label, browse_mode)
-#            browse_mode 'file'   → user picks any photo; the parent folder is used.
-#                                   Shows actual image files in the dialog — useful for
-#                                   confirming you're in the right folder.
-#            browse_mode 'folder' → standard folder picker with Make New Folder button.
-#                                   Use for output/destination paths.
-# flags  : list of (key, cli_flag, label) — one Checkbutton per entry
-# build  : callable(values_dict, active_flags_list) -> extra CLI arg list
-# detach : True = launch as independent process, do not capture output
+# Each tool has:
+#   id, title, subtitle (home button), desc (tool page), script, color, group,
+#   inputs, flags, build, detach
+#   danger  : True adds a red warning + confirmation checkbox before Run
+#   tutorial: steps shown when ? is pressed on that tool's page
+#             each step: {target: input_key/'run'/None, title, text}
 #
 TOOLS = [
+    # ── Workflow ──────────────────────────────────────────────────────────────
     {
         'id': 'organize',
-        'title': '1 · Organize  ·  optional',
-        'desc': 'Split a folder into raw/, jpeg/, and video/ subfolders.\nSkip if your photos are already separated.',
+        'title': '1 · Organize',
+        'subtitle': 'Sort a mixed folder into raw/, jpeg/, video/',
+        'desc': (
+            'Splits a folder into subfolders by file type. '
+            'Run this first if your RAW and JPEG files are mixed together.\n'
+            'Skip if they are already separated.'
+        ),
         'script': 'separate_raws.py',
         'color': ACCENT,
-        'inputs': [('folder', 'Folder to organize', 'file')],
-        'flags':  [('copy', '--copy', 'Copy instead of move (keeps originals)')],
+        'group': 'workflow',
+        'inputs': [('folder', 'Folder to organize')],
+        'flags':  [('copy', '--copy', 'Copy instead of move  (keeps originals in place)')],
         'build':  lambda v, fl: [v['folder']] + fl,
         'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': '1 · Organize  (optional)',
+                'text': (
+                    'Use this if your photos and RAW files\n'
+                    'are all mixed in one folder together.\n\n'
+                    'It will create:\n'
+                    '  raw/   · RAW files\n'
+                    '  jpeg/  · JPEG previews\n'
+                    '  video/ · Video clips'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Select the folder',
+                'text': (
+                    'Click Browse and navigate to the folder\n'
+                    'that contains your mixed files.'
+                ),
+            },
+            {
+                'target': 'run',
+                'title': 'Run it',
+                'text': (
+                    'Click Run to sort the files.\n\n'
+                    'Tick "Copy instead of move" if you want\n'
+                    'to keep the originals where they are.'
+                ),
+            },
+        ],
     },
     {
         'id': 'pick',
         'title': '2 · Pick Photos',
-        'desc': 'Browse JPEGs and flag keepers.  ← →  navigate  ·  Space  flag  ·  Q  done',
+        'subtitle': 'Browse JPEGs and flag the ones to keep',
+        'desc': (
+            'Opens a fullscreen photo browser. '
+            'Use arrow keys to navigate and Space to flag keepers. '
+            'Flagged photos are copied to the output folder when you press Q.'
+        ),
         'script': 'photopicker.py',
         'color': ACCENT,
+        'group': 'workflow',
         'inputs': [
-            ('folder', 'Photo folder', 'file'),
-            ('output', 'Output folder  (optional — leave blank for folder/selected/)', 'folder'),
+            ('folder', 'Photo folder'),
+            ('output', 'Output folder  (optional — defaults to folder/selected/)'),
         ],
         'flags':  [('move', '--move', 'Move flagged photos instead of copying')],
         'build':  lambda v, fl: (
@@ -81,156 +122,378 @@ TOOLS = [
             + fl
         ),
         'detach': True,
+        'tutorial': [
+            {
+                'target': None,
+                'title': '2 · Pick Photos',
+                'text': (
+                    'Opens a fast fullscreen photo browser.\n\n'
+                    '  ← →   navigate photos\n'
+                    '  Space  flag as "keep" and advance\n'
+                    '  U      unflag current photo\n'
+                    '  Q      quit and save picks'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Photo folder',
+                'text': (
+                    'Select the folder containing the JPEG\n'
+                    'previews you want to browse through.'
+                ),
+            },
+            {
+                'target': 'output',
+                'title': 'Output folder  (optional)',
+                'text': (
+                    'Leave blank to save picks into a\n'
+                    'selected/ subfolder automatically.\n\n'
+                    'Or choose a specific folder here.'
+                ),
+            },
+        ],
     },
     {
         'id': 'get_raws',
         'title': '3 · Get RAWs',
-        'desc': 'Copy RAW files (+ XMP sidecars) matching your selected previews.',
+        'subtitle': 'Copy RAW files matching your selected JPEGs',
+        'desc': (
+            'For each JPEG in your picks folder, finds the file with the same '
+            'base name in your RAW folder and copies it to the output folder. '
+            'XMP sidecar files are included automatically.'
+        ),
         'script': 'get_raws.py',
         'color': ACCENT,
+        'group': 'workflow',
         'inputs': [
-            ('jpeg',   'JPEG picks folder', 'file'),
-            ('raws',   'RAW source folder',   'file'),
-            ('output', 'Output folder',                                   'folder'),
+            ('jpeg',   'JPEG picks folder'),
+            ('raws',   'RAW source folder'),
+            ('output', 'Output folder'),
         ],
         'flags':  [],
         'build':  lambda v, fl: [v['jpeg'], v['raws'], v['output']],
         'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': '3 · Get RAWs',
+                'text': (
+                    'Matches your picked JPEGs to their\n'
+                    'corresponding RAW files by filename.\n\n'
+                    'XMP sidecar files (editing presets)\n'
+                    'are copied along automatically.'
+                ),
+            },
+            {
+                'target': 'jpeg',
+                'title': 'JPEG picks folder',
+                'text': 'The folder containing the JPEGs\nyou flagged in step 2.',
+            },
+            {
+                'target': 'raws',
+                'title': 'RAW source folder',
+                'text': (
+                    'The folder containing your RAW files\n'
+                    '(.CR3, .NEF, .ARW, etc.).'
+                ),
+            },
+            {
+                'target': 'output',
+                'title': 'Output folder',
+                'text': (
+                    'Where the matched RAW files will be\n'
+                    'copied. Create a new folder here\n'
+                    'to keep things organised.'
+                ),
+            },
+        ],
     },
     {
         'id': 'verify',
         'title': '4 · Verify Copy',
-        'desc': 'Confirm files copied to a drive without corruption (MD5 checksum).',
+        'subtitle': 'Confirm files copied without corruption',
+        'desc': (
+            'Computes an MD5 checksum for every file in the source folder and '
+            'compares it against the matching file in the destination. '
+            'Run this after copying to an external drive, before deleting originals.'
+        ),
         'script': 'verify_copy.py',
         'color': ACCENT,
+        'group': 'workflow',
         'inputs': [
-            ('source', 'Source folder', 'file'),
-            ('dest',   'Destination folder', 'file'),
+            ('source', 'Source folder'),
+            ('dest',   'Destination folder'),
         ],
         'flags':  [],
         'build':  lambda v, fl: [v['source'], v['dest']],
         'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': '4 · Verify Copy',
+                'text': (
+                    'Checksums every file in the source\n'
+                    'and compares it to the destination.\n\n'
+                    'Only delete originals after\n'
+                    'this passes!'
+                ),
+            },
+            {
+                'target': 'source',
+                'title': 'Source folder',
+                'text': 'The original folder you copied from.',
+            },
+            {
+                'target': 'dest',
+                'title': 'Destination folder',
+                'text': 'The folder you copied to\n(e.g. on your external drive).',
+            },
+        ],
     },
+    # ── Utilities ─────────────────────────────────────────────────────────────
     {
         'id': 'rename',
         'title': 'Rename by Date',
-        'desc': 'Rename files to YYYY-MM-DD_HHMMSS using their EXIF shoot date.',
+        'subtitle': 'Rename files using EXIF shoot date',
+        'desc': (
+            'Renames image files from camera names like IMG_1234 to '
+            'readable dates like 2024-07-15_143022, using the EXIF '
+            'DateTimeOriginal tag. Use Dry run to preview before committing.'
+        ),
         'script': 'rename_by_date.py',
         'color': UTIL_CLR,
-        'inputs': [('folder', 'Folder to rename', 'file')],
-        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no changes')],
+        'group': 'utility',
+        'inputs': [('folder', 'Folder to rename')],
+        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no changes made')],
         'build':  lambda v, fl: [v['folder']] + fl,
         'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Rename by Date',
+                'text': (
+                    'Renames files like IMG_1234.CR3\n'
+                    'to 2024-07-15_143022.CR3 using\n'
+                    'the EXIF shoot date.\n\n'
+                    'Always tick Dry run first to\n'
+                    'preview without making changes.'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Select folder',
+                'text': 'Choose the folder of files to rename.',
+            },
+        ],
     },
     {
         'id': 'diff',
         'title': 'Find Rejected',
-        'desc': "Copy photos not in your picks — the set difference of two folders.",
+        'subtitle': 'Copy photos that were not selected',
+        'desc': (
+            'Copies every file from the full folder whose filename does not '
+            'appear in the picks folder. Useful for collecting rejected photos '
+            'before deleting them, or for a second-pass review.'
+        ),
         'script': 'diff_folders.py',
         'color': UTIL_CLR,
+        'group': 'utility',
         'inputs': [
-            ('full',   'Full folder',  'file'),
-            ('picks',  'Picks folder', 'file'),
-            ('output', 'Output folder',                              'folder'),
+            ('full',   'Full folder  (all photos)'),
+            ('picks',  'Picks folder  (selected)'),
+            ('output', 'Output folder'),
         ],
         'flags':  [],
         'build':  lambda v, fl: [v['full'], v['picks'], v['output']],
         'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Find Rejected',
+                'text': (
+                    'Finds every file that is in the\n'
+                    'full folder but NOT in your picks,\n'
+                    'and copies them to a new folder.\n\n'
+                    'Handy for a second look before\n'
+                    'deleting the rejects.'
+                ),
+            },
+            {
+                'target': 'full',
+                'title': 'Full folder',
+                'text': 'The folder with all your photos\nbefore culling.',
+            },
+            {
+                'target': 'picks',
+                'title': 'Picks folder',
+                'text': 'The folder containing only\nthe photos you selected.',
+            },
+        ],
+    },
+    {
+        'id': 'move',
+        'title': 'Move Files',
+        'subtitle': 'Bulk move all files to another folder',
+        'desc': (
+            'Moves every file from a source folder into a destination folder. '
+            'Subdirectories are not moved. Skips files that already exist '
+            'at the destination.'
+        ),
+        'script': 'move_files.py',
+        'color': UTIL_CLR,
+        'group': 'utility',
+        'inputs': [
+            ('source', 'Source folder'),
+            ('dest',   'Destination folder'),
+        ],
+        'flags':  [],
+        'build':  lambda v, fl: [v['source'], v['dest']],
+        'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Move Files',
+                'text': (
+                    'Moves all files from one folder\n'
+                    'into another.\n\n'
+                    'Useful for consolidating photos\n'
+                    'or reorganising after culling.'
+                ),
+            },
+            {
+                'target': 'source',
+                'title': 'Source folder',
+                'text': 'The folder whose files you want to move.',
+            },
+            {
+                'target': 'dest',
+                'title': 'Destination folder',
+                'text': (
+                    'Where the files will be moved to.\n'
+                    'Will be created if it does not exist.'
+                ),
+            },
+        ],
+    },
+    {
+        'id': 'delete',
+        'title': 'Delete Files',
+        'subtitle': 'Permanently remove all files in a folder',
+        'desc': (
+            'Deletes every file directly inside the selected folder. '
+            'Subdirectories are left untouched. '
+            'This action cannot be undone — verify your copy first.'
+        ),
+        'script': 'delete_files.py',
+        'color': DANGER_CLR,
+        'group': 'utility',
+        'inputs': [('folder', 'Folder to delete files from')],
+        'flags':  [],
+        'build':  lambda v, fl: [v['folder']],
+        'detach': False,
+        'danger': True,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Delete Files',
+                'text': (
+                    'Permanently deletes all files in\n'
+                    'the selected folder.\n\n'
+                    'Use this to clean up originals\n'
+                    'AFTER verifying your copy.\n\n'
+                    'This cannot be undone.'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Select folder',
+                'text': (
+                    'Choose the folder whose files\n'
+                    'you want to permanently delete.'
+                ),
+            },
+            {
+                'target': 'run',
+                'title': 'Confirm before running',
+                'text': (
+                    'Tick the confirmation checkbox\n'
+                    'to unlock the Delete button.\n\n'
+                    'Make sure you have verified your\n'
+                    'copy before doing this!'
+                ),
+            },
+        ],
     },
 ]
 
-# ─────────────────────────── tutorial steps ───────────────────────────────────
-TUTORIAL_STEPS = [
+# ─────────────────────────── home page tutorial ───────────────────────────────
+HOME_TUTORIAL = [
     {
-        'card': None,
+        'target': None,
         'title': 'Welcome to PhotoPicker!',
         'text': (
-            'This toolkit helps you sort and prepare\n'
-            'photos for professional editing —\n'
-            'no paid software needed.\n\n'
-            'Cards 1–4 are the main workflow.\n'
-            'The two purple cards are optional.'
+            'This toolkit prepares photos for\n'
+            'professional editing — no paid\n'
+            'software needed.\n\n'
+            'Click any tool to open it.\n'
+            'The top four are the main workflow.'
         ),
     },
     {
-        'card': 'organize',
+        'target': 'organize',
         'title': '1 · Organize  (optional)',
         'text': (
-            'If your photos are in one mixed folder,\n'
-            'this sorts them into subfolders:\n\n'
-            '  raw/   ·  RAW files for editing\n'
-            '  jpeg/  ·  Preview images for picking\n'
-            '  video/ ·  Video clips\n\n'
-            'Skip this step if they are already\n'
-            'separated.'
+            'If your RAW and JPEG files are mixed\n'
+            'in one folder, start here to sort them\n'
+            'into raw/, jpeg/, and video/.'
         ),
     },
     {
-        'card': 'pick',
-        'title': '2 · Pick your keepers',
+        'target': 'pick',
+        'title': '2 · Pick Photos',
         'text': (
-            'Browse JPEGs at full speed and\n'
-            'flag the ones you want to keep.\n\n'
-            '  ← →   navigate photos\n'
-            '  Space  flag as keep and advance\n'
-            '  U      unflag current photo\n'
-            '  Q      quit and save picks'
+            'Browse your JPEGs at full speed\n'
+            'and flag the ones you want to keep.'
         ),
     },
     {
-        'card': 'get_raws',
-        'title': '3 · Collect the RAW files',
+        'target': 'get_raws',
+        'title': '3 · Get RAWs',
         'text': (
-            'After picking your JPEGs, use this\n'
-            'to grab the matching RAW files\n'
-            'ready for editing software.\n\n'
-            'XMP sidecar files are included\n'
-            'automatically if they exist.'
+            'After picking, use this to collect\n'
+            'the matching RAW files ready for\n'
+            'your editing software.'
         ),
     },
     {
-        'card': 'verify',
-        'title': '4 · Verify before deleting',
+        'target': 'verify',
+        'title': '4 · Verify Copy',
         'text': (
-            'After copying RAW files to your\n'
-            'drive, run this to confirm nothing\n'
-            'was corrupted in transit.\n\n'
-            'Only delete originals after\n'
-            'this passes!'
+            'After copying files to a drive,\n'
+            'run this to confirm nothing was\n'
+            'corrupted. Do this before deleting\n'
+            'the originals!'
         ),
     },
     {
-        'card': 'rename',
-        'title': 'Optional · Rename by date',
+        'target': 'rename',
+        'title': 'Utilities',
         'text': (
-            'Renames files from camera names\n'
-            'like IMG_1234 to readable dates\n'
-            'like 2024-07-15_143022.\n\n'
-            'Tick "Dry run" to preview first\n'
-            'without renaming anything.'
+            'These tools handle optional steps:\n\n'
+            '  Rename by Date  — tidy filenames\n'
+            '  Find Rejected   — review rejects\n'
+            '  Move Files      — bulk move\n'
+            '  Delete Files    — clean up originals'
         ),
     },
     {
-        'card': 'diff',
-        'title': 'Optional · Find rejected photos',
-        'text': (
-            'Creates a folder of everything\n'
-            "you didn't pick — handy for a\n"
-            'second look at the rejects\n'
-            'before deleting them.'
-        ),
-    },
-    {
-        'card': None,
+        'target': None,
         'title': "You're all set!",
         'text': (
-            'Standard workflow:\n\n'
-            '  1 · Organize\n'
-            '  2 · Pick Photos\n'
-            '  3 · Get RAWs\n'
-            '  4 · Verify Copy\n\n'
-            'Click  ?  any time to replay\n'
-            'this tutorial.'
+            'Click any tool to get started.\n\n'
+            'Each tool page has its own\n'
+            '?  button for a more detailed\n'
+            'walkthrough of that specific tool.'
         ),
     },
 ]
@@ -238,20 +501,11 @@ TUTORIAL_STEPS = [
 
 # ─────────────────────────── FolderInput ─────────────────────────────────────
 
-
 class FolderInput(tk.Frame):
-    """Label + text entry + Browse button for selecting a folder.
+    """Label + text entry + Browse button for selecting a folder."""
 
-    browse_mode='file'   — Opens a file picker showing photos; the parent
-                           folder of the selected file is used as the value.
-                           Lets users see their photos to confirm the folder.
-    browse_mode='folder' — Opens a folder picker (Make New Folder available).
-                           Use for output/destination paths.
-    """
-
-    def __init__(self, parent, label, browse_mode='folder', **kw):
+    def __init__(self, parent, label, **kw):
         super().__init__(parent, bg=CARD_BG, **kw)
-        self._mode = browse_mode
 
         tk.Label(self, text=label, bg=CARD_BG, fg=MUTED,
                  font=(FN, 8), anchor='w').pack(anchor='w')
@@ -280,74 +534,211 @@ class FolderInput(tk.Frame):
         return self._var.get().strip()
 
 
-# ─────────────────────────── ToolCard ────────────────────────────────────────
+# ─────────────────────────── NavButton ───────────────────────────────────────
 
-class ToolCard(tk.Frame):
-    """Dashboard card for one toolkit script."""
+class NavButton(tk.Frame):
+    """Clickable home-page card for one tool."""
 
-    def __init__(self, parent, cfg, **kw):
-        super().__init__(parent, bg=CARD_BG, **kw)
+    def __init__(self, parent, cfg, on_click, **kw):
+        super().__init__(parent, bg=CARD_BG, cursor='hand2', **kw)
         self._cfg = cfg
 
-        # Coloured top accent strip
+        # Left colour strip
+        strip = tk.Frame(self, bg=cfg['color'], width=4)
+        strip.pack(side='left', fill='y')
+
+        body = tk.Frame(self, bg=CARD_BG, padx=14, pady=10)
+        body.pack(side='left', fill='both', expand=True)
+
+        title_lbl = tk.Label(body, text=cfg['title'], bg=CARD_BG, fg=TEXT,
+                              font=(FN, 10, 'bold'), anchor='w')
+        title_lbl.pack(anchor='w')
+
+        sub_lbl = tk.Label(body, text=cfg['subtitle'], bg=CARD_BG, fg=MUTED,
+                            font=(FN, 8), anchor='w')
+        sub_lbl.pack(anchor='w')
+
+        arrow = tk.Label(self, text='›', bg=CARD_BG, fg=MUTED,
+                         font=(FN, 16), padx=14)
+        arrow.pack(side='right')
+
+        # Widgets that change colour on hover (strip excluded intentionally)
+        self._hover_targets = [self, body, title_lbl, sub_lbl, arrow]
+
+        for w in self._hover_targets:
+            w.bind('<Button-1>', lambda e, c=cfg: on_click(c))
+            w.bind('<Enter>',    lambda e: self._set_hover(True))
+            w.bind('<Leave>',    lambda e: self._set_hover(False))
+
+    def _set_hover(self, on):
+        bg = HOVER_BG if on else CARD_BG
+        for w in self._hover_targets:
+            w.config(bg=bg)
+
+
+# ─────────────────────────── HomePage ────────────────────────────────────────
+
+class HomePage(tk.Frame):
+    """Landing page with a nav button for each tool."""
+
+    def __init__(self, parent, tools, on_select, **kw):
+        super().__init__(parent, bg=BG, **kw)
+        self.buttons = {}  # id -> NavButton (for tutorial targeting)
+
+        # Scrollable canvas so the list works on small screens
+        canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
+        sb = tk.Scrollbar(self, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+
+        inner = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+
+        def _on_resize(e):
+            canvas.itemconfig(win_id, width=e.width)
+        canvas.bind('<Configure>', _on_resize)
+
+        inner.bind('<Configure>',
+                   lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+
+        # Mouse-wheel scroll
+        canvas.bind_all('<MouseWheel>',
+                        lambda e: canvas.yview_scroll(-1 * (e.delta // 120), 'units'))
+
+        # Build sections
+        workflow = [t for t in tools if t['group'] == 'workflow']
+        utility  = [t for t in tools if t['group'] == 'utility']
+
+        self._build_section(inner, 'Workflow', workflow, on_select)
+        tk.Frame(inner, bg=DIVIDER, height=1).pack(fill='x', padx=20, pady=(4, 0))
+        self._build_section(inner, 'Utilities', utility, on_select)
+
+    def _build_section(self, parent, label, tools, on_select):
+        tk.Label(parent, text=label.upper(), bg=BG, fg=MUTED,
+                 font=(FN, 8, 'bold'), anchor='w').pack(
+                     fill='x', padx=20, pady=(16, 6))
+
+        grid = tk.Frame(parent, bg=BG)
+        grid.pack(fill='x', padx=14, pady=(0, 4))
+        grid.columnconfigure(0, weight=1, uniform='nav')
+        grid.columnconfigure(1, weight=1, uniform='nav')
+
+        for i, cfg in enumerate(tools):
+            row, col = divmod(i, 2)
+            btn = NavButton(grid, cfg, on_select)
+            btn.grid(row=row, column=col, padx=5, pady=4, sticky='ew')
+            self.buttons[cfg['id']] = btn
+
+    def get_tutorial(self):
+        """Return (steps, targets) for TutorialOverlay."""
+        targets = {tid: btn for tid, btn in self.buttons.items()}
+        return HOME_TUTORIAL, targets
+
+
+# ─────────────────────────── ToolPage ────────────────────────────────────────
+
+class ToolPage(tk.Frame):
+    """Full-page view for a single tool."""
+
+    def __init__(self, parent, cfg, **kw):
+        super().__init__(parent, bg=BG, **kw)
+        self._cfg = cfg
+        self._inputs = {}
+        self._flag_vars = {}
+
+        # Top colour strip
         tk.Frame(self, bg=cfg['color'], height=3).pack(fill='x')
 
-        body = tk.Frame(self, bg=CARD_BG)
-        body.pack(fill='both', expand=True, padx=12, pady=(8, 10))
+        # Content area
+        content = tk.Frame(self, bg=BG)
+        content.pack(fill='both', expand=True, padx=28, pady=20)
 
-        # Pack the log and run button with side='bottom' first so they are
-        # always anchored at the card bottom regardless of card height.
-        self._log = tk.Text(
-            body, height=5, bg='#18181b', fg='#71717a',
-            font=('Consolas', 8), relief='flat', state='disabled',
-            wrap='word', bd=6, cursor='arrow',
-        )
-        self._log.pack(side='bottom', fill='x', pady=(4, 0))
-
-        bottom = tk.Frame(body, bg=CARD_BG)
-        bottom.pack(side='bottom', fill='x', pady=(10, 4))
-
-        self._run_btn = tk.Button(
-            bottom, text='Run', bg=cfg['color'], fg='white', relief='flat',
-            font=(FN, 9, 'bold'), cursor='hand2', bd=0, padx=18, pady=5,
-            activebackground=cfg['color'], activeforeground='white',
-            command=self._run,
-        )
-        self._run_btn.pack(side='left')
-
-        self._status_var = tk.StringVar()
-        self._status_lbl = tk.Label(
-            bottom, textvariable=self._status_var,
-            bg=CARD_BG, fg=MUTED, font=(FN, 8), anchor='w',
-        )
-        self._status_lbl.pack(side='left', padx=(10, 0))
-
-        # Title, description, inputs, and flags fill from the top.
-        tk.Label(body, text=cfg['title'], bg=CARD_BG, fg=TEXT,
-                 font=(FN, 10, 'bold'), anchor='w').pack(anchor='w')
-        tk.Label(body, text=cfg['desc'], bg=CARD_BG, fg=MUTED,
-                 font=(FN, 8), anchor='w', justify='left').pack(anchor='w', pady=(2, 8))
+        # Description
+        tk.Label(content, text=cfg['desc'], bg=BG, fg=MUTED,
+                 font=(FN, 9), anchor='w', justify='left',
+                 wraplength=540).pack(anchor='w', pady=(0, 18))
 
         # Folder inputs
-        self._inputs = {}
         for entry in cfg['inputs']:
             key, label = entry[0], entry[1]
-            mode = entry[2] if len(entry) > 2 else 'folder'
-            fi = FolderInput(body, label, browse_mode=mode)
-            fi.pack(fill='x', pady=2)
+            fi = FolderInput(content, label)
+            fi.pack(fill='x', pady=4)
             self._inputs[key] = fi
 
         # Flag checkboxes
-        self._flag_vars = {}
         for key, flag, label in cfg.get('flags', []):
             var = tk.BooleanVar()
             tk.Checkbutton(
-                body, text=label, variable=var,
-                bg=CARD_BG, fg=MUTED, selectcolor=BTN_BG,
-                activebackground=CARD_BG, activeforeground=TEXT,
-                font=(FN, 8), cursor='hand2',
-            ).pack(anchor='w', pady=(4, 0))
+                content, text=label, variable=var,
+                bg=BG, fg=MUTED, selectcolor=BTN_BG,
+                activebackground=BG, activeforeground=TEXT,
+                font=(FN, 9), cursor='hand2',
+            ).pack(anchor='w', pady=(8, 0))
             self._flag_vars[key] = (var, flag)
+
+        # Danger confirmation checkbox
+        self._confirmed = None
+        if cfg.get('danger'):
+            tk.Frame(content, bg=DANGER_CLR, height=1).pack(fill='x', pady=(16, 8))
+            tk.Label(content,
+                     text='⚠  This will permanently delete files. This cannot be undone.',
+                     bg=BG, fg=DANGER_CLR, font=(FN, 9), anchor='w').pack(anchor='w')
+            self._confirmed = tk.BooleanVar()
+            tk.Checkbutton(
+                content, text='I understand — proceed with deletion',
+                variable=self._confirmed,
+                bg=BG, fg=TEXT, selectcolor=BTN_BG,
+                activebackground=BG, activeforeground=TEXT,
+                font=(FN, 9, 'bold'), cursor='hand2',
+                command=self._update_run_btn,
+            ).pack(anchor='w', pady=(4, 0))
+
+        # Run row
+        run_row = tk.Frame(content, bg=BG)
+        run_row.pack(fill='x', pady=(20, 8))
+
+        btn_color = DANGER_CLR if cfg.get('danger') else cfg['color']
+        self._run_btn = tk.Button(
+            run_row, text='Run', bg=btn_color, fg='white', relief='flat',
+            font=(FN, 10, 'bold'), cursor='hand2', bd=0, padx=24, pady=7,
+            activebackground=btn_color, activeforeground='white',
+            command=self._run,
+        )
+        self._run_btn.pack(side='left')
+        if cfg.get('danger'):
+            self._run_btn.config(state='disabled', text='Delete')
+
+        self._status_var = tk.StringVar()
+        self._status_lbl = tk.Label(run_row, textvariable=self._status_var,
+                                     bg=BG, fg=MUTED, font=(FN, 9), anchor='w')
+        self._status_lbl.pack(side='left', padx=(14, 0))
+
+        # Output log
+        log_frame = tk.Frame(content, bg=CARD_BG)
+        log_frame.pack(fill='both', expand=True, pady=(4, 0))
+
+        self._log = tk.Text(
+            log_frame, bg='#18181b', fg='#71717a',
+            font=('Consolas', 8), relief='flat', state='disabled',
+            wrap='word', bd=8, cursor='arrow',
+        )
+        sb = tk.Scrollbar(log_frame, command=self._log.yview)
+        self._log.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y')
+        self._log.pack(side='left', fill='both', expand=True)
+
+    def get_tutorial(self):
+        """Return (steps, targets) for TutorialOverlay."""
+        targets = {key: fi for key, fi in self._inputs.items()}
+        targets['run'] = self._run_btn
+        return self._cfg['tutorial'], targets
+
+    def _update_run_btn(self):
+        if self._confirmed and self._confirmed.get():
+            self._run_btn.config(state='normal')
+        else:
+            self._run_btn.config(state='disabled')
 
     # ── run ───────────────────────────────────────────────────────────────────
 
@@ -355,7 +746,6 @@ class ToolCard(tk.Frame):
         vals  = {key: fi.get() for key, fi in self._inputs.items()}
         flags = [flag for _, (var, flag) in self._flag_vars.items() if var.get()]
 
-        # Validate: all inputs must be non-empty unless marked optional
         input_labels = {e[0]: e[1] for e in self._cfg['inputs']}
         for key, fi in self._inputs.items():
             if not fi.get() and 'optional' not in input_labels[key].lower():
@@ -363,14 +753,14 @@ class ToolCard(tk.Frame):
                 return
 
         args = self._cfg['build'](vals, flags)
-        # -u forces unbuffered stdout so output streams in real time
         cmd  = [sys.executable, '-u', str(SCRIPT_DIR / self._cfg['script'])] + args
 
         if self._cfg.get('detach'):
             subprocess.Popen(cmd)
             self._set_status('Launched.', SUCCESS)
         else:
-            self._run_btn.config(state='disabled', text='Running…')
+            self._run_btn.config(state='disabled',
+                                  text='Running…' if not self._cfg.get('danger') else 'Deleting…')
             self._set_status('', MUTED)
             self._clear_log()
             threading.Thread(target=self._run_thread, args=(cmd,), daemon=True).start()
@@ -378,20 +768,27 @@ class ToolCard(tk.Frame):
     def _run_thread(self, cmd):
         try:
             proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
             )
             for line in proc.stdout:
                 self._append_log(line)
             proc.wait()
-            ok  = proc.returncode == 0
+            ok = proc.returncode == 0
             self._set_status('Done.' if ok else f'Error (exit {proc.returncode}).',
                              SUCCESS if ok else ERROR_CLR)
         except Exception as exc:
             self._set_status(str(exc), ERROR_CLR)
         finally:
-            self._run_btn.after(0, lambda: self._run_btn.config(state='normal', text='Run'))
+            def _reset():
+                if self._cfg.get('danger'):
+                    # Re-lock after a delete — require re-confirmation
+                    if self._confirmed:
+                        self._confirmed.set(False)
+                    self._run_btn.config(state='disabled', text='Delete')
+                else:
+                    self._run_btn.config(state='normal', text='Run')
+            self._run_btn.after(0, _reset)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -419,37 +816,33 @@ class ToolCard(tk.Frame):
 
 class TutorialOverlay:
     """
-    Game-style tutorial overlay.
+    Game-style tutorial. Works on any page by accepting explicit steps + targets.
 
-    Two layered Toplevel windows sit above the dashboard:
-      - _dim_win  : semi-transparent black window covering the whole screen (the fog)
-      - _hl_win   : transparent window (color-keyed) used for the highlight border,
-                    the arrow, and the caption box
-
-    The highlighted card shows through _hl_win because its area is left as the
-    transparent key color. Everything else is dimmed by _dim_win underneath.
+    steps   : list of {target: key_or_None, title: str, text: str}
+    targets : dict of {key: widget}  — used to locate the highlight bounding box
     """
 
-    _CAPTION_W   = 270   # caption box width in pixels
-    _CARD_PAD    = 6     # extra padding around highlighted card
-    _ARROW_PAD   = 20    # gap between caption edge and arrow start
+    _CAPTION_W = 270
+    _CARD_PAD  = 6
+    _ARROW_PAD = 20
 
-    def __init__(self, root, dashboard, on_close):
+    def __init__(self, root, steps, targets, on_close):
         self.root      = root
-        self.dashboard = dashboard
+        self._steps    = steps
+        self._targets  = targets
         self.on_close  = on_close
         self.step      = 0
         self._debounce = None
 
-        # ── dim window ────────────────────────────────────────────────────────
+        # Dim window
         self._dim_win = tk.Toplevel(root)
         self._dim_win.overrideredirect(True)
         self._dim_win.attributes('-topmost', True)
         self._dim_win.attributes('-alpha', 0.55)
         self._dim_win.configure(bg='black')
-        self._dim_win.bind('<Button-1>', lambda e: None)   # block clicks on fog
+        self._dim_win.bind('<Button-1>', lambda e: None)
 
-        # ── highlight + caption window ────────────────────────────────────────
+        # Highlight + caption window
         self._hl_win = tk.Toplevel(root)
         self._hl_win.overrideredirect(True)
         self._hl_win.attributes('-topmost', True)
@@ -457,14 +850,14 @@ class TutorialOverlay:
         try:
             self._hl_win.attributes('-transparentcolor', _TKEY)
         except tk.TclError:
-            pass  # graceful degradation on non-Windows platforms
+            pass
 
         self._canvas = tk.Canvas(self._hl_win, bg=_TKEY, highlightthickness=0)
         self._canvas.pack(fill='both', expand=True)
 
-        # ── caption frame (embedded in canvas via create_window) ──────────────
-        cap_outer = tk.Frame(self._canvas, bg=TUT_HL, padx=2, pady=2)  # amber border
-        cap_inner = tk.Frame(cap_outer,   bg=TUT_BG, padx=14, pady=10)
+        # Caption frame
+        cap_outer = tk.Frame(self._canvas, bg=TUT_HL, padx=2, pady=2)
+        cap_inner = tk.Frame(cap_outer, bg=TUT_BG, padx=14, pady=10)
         cap_inner.pack(fill='both', expand=True)
 
         self._cap_title = tk.Label(cap_inner, bg=TUT_BG, fg=TUT_HL,
@@ -504,21 +897,15 @@ class TutorialOverlay:
 
         self._cap_win = self._canvas.create_window(0, 0, window=cap_outer, anchor='nw')
 
-        # Track parent window moves/resizes (debounced to avoid lag during drag)
         self._cfg_bind = root.bind('<Configure>', self._on_configure, add='+')
-
         self._update_geometry()
         self._draw()
-
-        # grab_set() routes all tkinter events to _hl_win, ensuring the caption
-        # buttons receive clicks even if _dim_win would otherwise intercept them.
         self._hl_win.focus_force()
         self._hl_win.grab_set()
 
     # ── geometry ──────────────────────────────────────────────────────────────
 
     def _window_rect(self):
-        """Return (x, y, w, h) of the root window in screen coordinates."""
         self.root.update_idletasks()
         return (self.root.winfo_rootx(), self.root.winfo_rooty(),
                 self.root.winfo_width(),  self.root.winfo_height())
@@ -551,10 +938,10 @@ class TutorialOverlay:
             c.after(60, self._draw)
             return
 
-        step    = TUTORIAL_STEPS[self.step]
-        card_id = step.get('card')
-        card    = self.dashboard.cards.get(card_id) if card_id else None
-        is_last = self.step == len(TUTORIAL_STEPS) - 1
+        step      = self._steps[self.step]
+        target_id = step.get('target')
+        widget    = self._targets.get(target_id) if target_id else None
+        is_last   = self.step == len(self._steps) - 1
 
         self._cap_title.config(text=step['title'])
         self._cap_text.config(text=step['text'])
@@ -568,26 +955,20 @@ class TutorialOverlay:
         CW  = self._CAPTION_W
         PAD = self._ARROW_PAD
 
-        if card:
-            # Card bounding box in overlay-window coordinates
+        if widget:
             ox = self._hl_win.winfo_rootx()
             oy = self._hl_win.winfo_rooty()
             m  = self._CARD_PAD
-            cx1 = card.winfo_rootx() - ox - m
-            cy1 = card.winfo_rooty() - oy - m
-            cx2 = cx1 + card.winfo_width()  + 2 * m
-            cy2 = cy1 + card.winfo_height() + 2 * m
+            cx1 = widget.winfo_rootx() - ox - m
+            cy1 = widget.winfo_rooty() - oy - m
+            cx2 = cx1 + widget.winfo_width()  + 2 * m
+            cy2 = cy1 + widget.winfo_height() + 2 * m
 
-            # Bright highlight border (drawn over the transparent key — visible)
             c.create_rectangle(cx1, cy1, cx2, cy2,
                                outline=TUT_HL, width=3, tags='hl')
-
-            # The card area itself remains _TKEY so it shows through the overlay.
-            # Draw _TKEY fill inside the border to keep it transparent.
             c.create_rectangle(cx1 + 3, cy1 + 3, cx2 - 3, cy2 - 3,
                                fill=_TKEY, outline='', tags='hl')
 
-            # Caption placement: opposite horizontal side from the card centre
             card_cx = (cx1 + cx2) / 2
             if card_cx <= W / 2:
                 cap_x = cx2 + PAD
@@ -600,15 +981,9 @@ class TutorialOverlay:
                 a_src = (cap_x + CW, cap_y + 80)
                 a_dst = (cx1,        (cy1 + cy2) / 2)
 
-            # Arrow from caption to card
-            c.create_line(
-                *a_src, *a_dst,
-                fill=TUT_HL, width=2,
-                arrow='last', arrowshape=(12, 14, 5),
-                tags='hl',
-            )
+            c.create_line(*a_src, *a_dst, fill=TUT_HL, width=2,
+                          arrow='last', arrowshape=(12, 14, 5), tags='hl')
         else:
-            # No card highlighted — caption centred over full-dim screen
             cap_x = (W - CW) // 2
             cap_y = (H - 250) // 2
 
@@ -622,7 +997,7 @@ class TutorialOverlay:
     # ── navigation ────────────────────────────────────────────────────────────
 
     def _next(self):
-        if self.step < len(TUTORIAL_STEPS) - 1:
+        if self.step < len(self._steps) - 1:
             self.step += 1
             self._draw()
         else:
@@ -641,63 +1016,106 @@ class TutorialOverlay:
         self.on_close()
 
 
-# ─────────────────────────── Dashboard ───────────────────────────────────────
+# ─────────────────────────── App ─────────────────────────────────────────────
 
-class Dashboard:
+class App:
+    """Root application — manages the persistent chrome and page navigation."""
+
     def __init__(self, root):
-        self.root      = root
-        self._tutorial = None
-        self.cards     = {}
+        self.root          = root
+        self._current_page = None
+        self._tutorial     = None
 
         root.title('PhotoPicker')
         root.configure(bg=BG)
-        root.minsize(780, 660)
+        root.minsize(640, 480)
 
-        self._build_header()
-        self._build_grid()
+        self._build_chrome()
+        self.show_home()
 
-    def _build_header(self):
+    # ── chrome ────────────────────────────────────────────────────────────────
+
+    def _build_chrome(self):
+        # Persistent header
         hdr = tk.Frame(self.root, bg=BG)
-        hdr.pack(fill='x', padx=20, pady=(16, 8))
+        hdr.pack(fill='x', padx=20, pady=(14, 0))
 
-        tk.Label(hdr, text='PhotoPicker', bg=BG, fg=TEXT,
-                 font=(FN, 16, 'bold')).pack(side='left')
-        tk.Label(hdr, text='Photo preparation toolkit', bg=BG, fg=MUTED,
-                 font=(FN, 9)).pack(side='left', padx=(10, 0), pady=(5, 0))
+        self._back_btn = tk.Button(
+            hdr, text='← Back', bg=BTN_BG, fg=TEXT, relief='flat',
+            font=(FN, 9), cursor='hand2', bd=0, padx=10, pady=4,
+            activebackground=BTN_ACTIVE, activeforeground=TEXT,
+            command=self.show_home,
+        )
+        # Packed/forgotten dynamically in show_home / show_tool
 
-        tk.Button(
+        self._title_lbl = tk.Label(hdr, text='PhotoPicker', bg=BG, fg=TEXT,
+                                    font=(FN, 15, 'bold'))
+        self._title_lbl.pack(side='left')
+
+        self._sub_lbl = tk.Label(hdr, text='Photo preparation toolkit',
+                                  bg=BG, fg=MUTED, font=(FN, 9))
+        self._sub_lbl.pack(side='left', padx=(10, 0), pady=(4, 0))
+
+        self._tut_btn = tk.Button(
             hdr, text='?  Tutorial', bg=BTN_BG, fg=TEXT, relief='flat',
-            font=(FN, 9), cursor='hand2', bd=0, padx=12, pady=5,
+            font=(FN, 9), cursor='hand2', bd=0, padx=12, pady=4,
             activebackground=BTN_ACTIVE, activeforeground=TEXT,
             command=self._start_tutorial,
-        ).pack(side='right')
+        )
+        self._tut_btn.pack(side='right')
 
-    def _build_grid(self):
-        grid = tk.Frame(self.root, bg=BG)
-        grid.pack(fill='both', expand=True, padx=14, pady=(0, 14))
-        grid.columnconfigure(0, weight=1, uniform='col')
-        grid.columnconfigure(1, weight=1, uniform='col')
+        # Thin divider under header
+        tk.Frame(self.root, bg=DIVIDER, height=1).pack(fill='x', pady=(10, 0))
 
-        for i, cfg in enumerate(TOOLS):
-            row, col = divmod(i, 2)
-            card = ToolCard(grid, cfg)
-            card.grid(row=row, column=col, padx=6, pady=6, sticky='nsew')
-            grid.rowconfigure(row, weight=1)
-            self.cards[cfg['id']] = card
+        # Page container — current page is packed/destroyed here
+        self._page_area = tk.Frame(self.root, bg=BG)
+        self._page_area.pack(fill='both', expand=True)
+
+    # ── navigation ────────────────────────────────────────────────────────────
+
+    def show_home(self):
+        self._close_tutorial()
+        self._swap_page(HomePage(self._page_area, TOOLS, on_select=self.show_tool))
+        self._back_btn.pack_forget()
+        self._title_lbl.config(text='PhotoPicker')
+        self._sub_lbl.config(text='Photo preparation toolkit')
+        self.root.title('PhotoPicker')
+
+    def show_tool(self, cfg):
+        self._close_tutorial()
+        self._swap_page(ToolPage(self._page_area, cfg))
+        self._back_btn.pack(side='left', before=self._title_lbl, padx=(0, 10))
+        self._title_lbl.config(text=cfg['title'])
+        self._sub_lbl.config(text=cfg['subtitle'])
+        self.root.title(f"PhotoPicker — {cfg['title']}")
+
+    def _swap_page(self, new_page):
+        if self._current_page:
+            self._current_page.destroy()
+        new_page.pack(fill='both', expand=True)
+        self._current_page = new_page
+
+    # ── tutorial ──────────────────────────────────────────────────────────────
 
     def _start_tutorial(self):
-        if self._tutorial is None:
-            self._tutorial = TutorialOverlay(self.root, self, self._end_tutorial)
+        if self._tutorial is not None or self._current_page is None:
+            return
+        steps, targets = self._current_page.get_tutorial()
+        self._tutorial = TutorialOverlay(self.root, steps, targets, self._end_tutorial)
 
     def _end_tutorial(self):
         self._tutorial = None
+
+    def _close_tutorial(self):
+        if self._tutorial:
+            self._tutorial._close()
 
 
 # ─────────────────────────── entry point ─────────────────────────────────────
 
 def main():
     root = tk.Tk()
-    Dashboard(root)
+    App(root)
     root.mainloop()
 
 
