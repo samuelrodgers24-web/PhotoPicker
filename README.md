@@ -1,5 +1,9 @@
   ABOUT
   ------------
+  This application is intended to be used after copying everything from a
+  photoshoot to your computer. It will help sort and organize the pictures
+  into different folders before taking them to your editing software.
+  
   The code for this project was writted exlusively by Claude Code.
   The creation of every feature was directed by Sam Rodgers.
 
