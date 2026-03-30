@@ -10,13 +10,41 @@ Usage:
 """
 
 import sys
+
+# ── Frozen-exe dispatch ───────────────────────────────────────────────────────
+# When bundled by PyInstaller, sys.executable is the .exe itself (not python).
+# Sub-scripts are imported as modules and their main() is called directly.
+# The GUI launches them via:  [sys.executable, '--run-script', 'script_name', ...args]
+_SCRIPTS = {
+    'separate_raws': 'separate_raws',
+    'get_raws':      'get_raws',
+    'diff_folders':  'diff_folders',
+    'verify_copy':   'verify_copy',
+    'rename_by_date':'rename_by_date',
+    'move_files':    'move_files',
+    'delete_files':  'delete_files',
+    'photopicker':   'photopicker',
+}
+
+if len(sys.argv) >= 3 and sys.argv[1] == '--run-script':
+    _name = sys.argv[2]
+    sys.argv = [sys.argv[0]] + sys.argv[3:]
+    _mod = __import__(_SCRIPTS[_name])
+    _mod.main()
+    sys.exit(0)
+# ─────────────────────────────────────────────────────────────────────────────
+
 import subprocess
 import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-SCRIPT_DIR = Path(__file__).parent
+if getattr(sys, 'frozen', False):
+    # Running inside a PyInstaller bundle — scripts live in the extracted temp dir
+    SCRIPT_DIR = Path(sys._MEIPASS)
+else:
+    SCRIPT_DIR = Path(__file__).parent
 
 # ─────────────────────────── palette ─────────────────────────────────────────
 BG         = '#18181b'
@@ -753,7 +781,11 @@ class ToolPage(tk.Frame):
                 return
 
         args = self._cfg['build'](vals, flags)
-        cmd  = [sys.executable, '-u', str(SCRIPT_DIR / self._cfg['script'])] + args
+        script_stem = Path(self._cfg['script']).stem
+        if getattr(sys, 'frozen', False):
+            cmd = [sys.executable, '--run-script', script_stem] + args
+        else:
+            cmd = [sys.executable, '-u', str(SCRIPT_DIR / self._cfg['script'])] + args
 
         if self._cfg.get('detach'):
             subprocess.Popen(cmd)
