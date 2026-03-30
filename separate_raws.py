@@ -116,7 +116,7 @@ def separate(folder: Path, copy: bool):
         if not file_list:
             return
         dest_dir.mkdir(exist_ok=True)
-        print(f"\n{label}  →  {dest_dir.name}/")
+        print(f"\n{label}  ->  {dest_dir.name}/")
         for src in sorted(file_list):
             dest = dest_dir / src.name
             if dest.exists():

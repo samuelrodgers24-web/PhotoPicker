@@ -132,7 +132,7 @@ def main():
         sys.exit(0)
 
     for src, new_name in changes:
-        print(f"  {src.name:<40}  →  {new_name}")
+        print(f"  {src.name:<40}  ->  {new_name}")
 
     print(f"\n{len(changes)} file{'s' if len(changes) != 1 else ''} to rename"
           + (f", {len(unchanged)} already correct." if unchanged else "."))
