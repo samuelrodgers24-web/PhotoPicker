@@ -78,58 +78,10 @@ FN = 'Segoe UI'
 #             each step: {target: input_key/'run'/None, title, text}
 #
 TOOLS = [
-    # ── Workflow ──────────────────────────────────────────────────────────────
-    {
-        'id': 'organize',
-        'title': '1 · Organize',
-        'subtitle': 'Sort a mixed folder into raw/, jpeg/, video/',
-        'desc': (
-            'Splits a folder into subfolders by file type. '
-            'Run this first if your RAW and JPEG files are mixed together.\n'
-            'Skip if they are already separated.'
-        ),
-        'script': 'separate_raws.py',
-        'color': ACCENT,
-        'group': 'workflow',
-        'inputs': [('folder', 'Folder to organize')],
-        'flags':  [('copy', '--copy', 'Copy instead of move  (keeps originals in place)')],
-        'build':  lambda v, fl: [v['folder']] + fl,
-        'detach': False,
-        'tutorial': [
-            {
-                'target': None,
-                'title': '1 · Organize  (optional)',
-                'text': (
-                    'Use this if your photos and RAW files\n'
-                    'are all mixed in one folder together.\n\n'
-                    'It will create:\n'
-                    '  raw/   · RAW files\n'
-                    '  jpeg/  · JPEG previews\n'
-                    '  video/ · Video clips'
-                ),
-            },
-            {
-                'target': 'folder',
-                'title': 'Select the folder',
-                'text': (
-                    'Click Browse and navigate to the folder\n'
-                    'that contains your mixed files.'
-                ),
-            },
-            {
-                'target': 'run',
-                'title': 'Run it',
-                'text': (
-                    'Click Run to sort the files.\n\n'
-                    'Tick "Copy instead of move" if you want\n'
-                    'to keep the originals where they are.'
-                ),
-            },
-        ],
-    },
+    # ── Workflow (core two-step process) ──────────────────────────────────────
     {
         'id': 'pick',
-        'title': '2 · Pick Photos',
+        'title': 'Pick Photos',
         'subtitle': 'Browse JPEGs and flag the ones to keep',
         'desc': (
             'Opens a fullscreen photo browser. '
@@ -139,6 +91,7 @@ TOOLS = [
         'script': 'photopicker.py',
         'color': ACCENT,
         'group': 'workflow',
+        'step': 1,
         'inputs': [
             ('folder', 'Photo folder'),
             ('output', 'Output folder  (optional — defaults to folder/selected/)'),
@@ -153,7 +106,7 @@ TOOLS = [
         'tutorial': [
             {
                 'target': None,
-                'title': '2 · Pick Photos',
+                'title': 'Pick Photos',
                 'text': (
                     'Opens a fast fullscreen photo browser.\n\n'
                     '  ← →   navigate photos\n'
@@ -183,7 +136,7 @@ TOOLS = [
     },
     {
         'id': 'get_raws',
-        'title': '3 · Get RAWs',
+        'title': 'Get RAWs',
         'subtitle': 'Copy RAW files matching your selected JPEGs',
         'desc': (
             'For each JPEG in your picks folder, finds the file with the same '
@@ -193,6 +146,7 @@ TOOLS = [
         'script': 'get_raws.py',
         'color': ACCENT,
         'group': 'workflow',
+        'step': 2,
         'inputs': [
             ('jpeg',   'JPEG picks folder'),
             ('raws',   'RAW source folder'),
@@ -204,7 +158,7 @@ TOOLS = [
         'tutorial': [
             {
                 'target': None,
-                'title': '3 · Get RAWs',
+                'title': 'Get RAWs',
                 'text': (
                     'Matches your picked JPEGs to their\n'
                     'corresponding RAW files by filename.\n\n'
@@ -215,7 +169,7 @@ TOOLS = [
             {
                 'target': 'jpeg',
                 'title': 'JPEG picks folder',
-                'text': 'The folder containing the JPEGs\nyou flagged in step 2.',
+                'text': 'The folder containing the JPEGs\nyou flagged in step 1.',
             },
             {
                 'target': 'raws',
@@ -236,9 +190,58 @@ TOOLS = [
             },
         ],
     },
+    # ── Utilities ─────────────────────────────────────────────────────────────
+    {
+        'id': 'organize',
+        'title': 'Split RAW/JPEG',
+        'subtitle': 'Sort a mixed folder into raw/, jpeg/, video/',
+        'desc': (
+            'Splits a folder into subfolders by file type. '
+            'Run this first if your RAW and JPEG files are mixed together.\n'
+            'Skip if they are already separated.'
+        ),
+        'script': 'separate_raws.py',
+        'color': UTIL_CLR,
+        'group': 'utility',
+        'inputs': [('folder', 'Folder to split')],
+        'flags':  [('copy', '--copy', 'Copy instead of move  (keeps originals in place)')],
+        'build':  lambda v, fl: [v['folder']] + fl,
+        'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Split RAW/JPEG',
+                'text': (
+                    'Use this if your photos and RAW files\n'
+                    'are all mixed in one folder together.\n\n'
+                    'It will create:\n'
+                    '  raw/   · RAW files\n'
+                    '  jpeg/  · JPEG previews\n'
+                    '  video/ · Video clips'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Select the folder',
+                'text': (
+                    'Click Browse and navigate to the folder\n'
+                    'that contains your mixed files.'
+                ),
+            },
+            {
+                'target': 'run',
+                'title': 'Run it',
+                'text': (
+                    'Click Run to sort the files.\n\n'
+                    'Tick "Copy instead of move" if you want\n'
+                    'to keep the originals where they are.'
+                ),
+            },
+        ],
+    },
     {
         'id': 'verify',
-        'title': '4 · Verify Copy',
+        'title': 'Verify Copy',
         'subtitle': 'Confirm files copied without corruption',
         'desc': (
             'Computes an MD5 checksum for every file in the source folder and '
@@ -246,8 +249,8 @@ TOOLS = [
             'Run this after copying to an external drive, before deleting originals.'
         ),
         'script': 'verify_copy.py',
-        'color': ACCENT,
-        'group': 'workflow',
+        'color': UTIL_CLR,
+        'group': 'utility',
         'inputs': [
             ('source', 'Source folder'),
             ('dest',   'Destination folder'),
@@ -258,7 +261,7 @@ TOOLS = [
         'tutorial': [
             {
                 'target': None,
-                'title': '4 · Verify Copy',
+                'title': 'Verify Copy',
                 'text': (
                     'Checksums every file in the source\n'
                     'and compares it to the destination.\n\n'
@@ -278,7 +281,6 @@ TOOLS = [
             },
         ],
     },
-    # ── Utilities ─────────────────────────────────────────────────────────────
     {
         'id': 'rename',
         'title': 'Rename by Date',
@@ -463,55 +465,39 @@ HOME_TUTORIAL = [
             'This toolkit prepares photos for\n'
             'professional editing — no paid\n'
             'software needed.\n\n'
-            'Click any tool to open it.\n'
-            'The top four are the main workflow.'
-        ),
-    },
-    {
-        'target': 'organize',
-        'title': '1 · Organize  (optional)',
-        'text': (
-            'If your RAW and JPEG files are mixed\n'
-            'in one folder, start here to sort them\n'
-            'into raw/, jpeg/, and video/.'
+            'The workflow is just two steps.\n'
+            'Everything else is optional.'
         ),
     },
     {
         'target': 'pick',
-        'title': '2 · Pick Photos',
+        'title': 'Step 1 · Pick Photos',
         'text': (
             'Browse your JPEGs at full speed\n'
-            'and flag the ones you want to keep.'
+            'and flag the ones you want to keep.\n\n'
+            'This opens a fullscreen viewer —\n'
+            'just arrow keys and spacebar.'
         ),
     },
     {
         'target': 'get_raws',
-        'title': '3 · Get RAWs',
+        'title': 'Step 2 · Get RAWs',
         'text': (
             'After picking, use this to collect\n'
-            'the matching RAW files ready for\n'
-            'your editing software.'
+            'the matching RAW files by filename.\n\n'
+            'Ready to hand off to your editor.'
         ),
     },
     {
-        'target': 'verify',
-        'title': '4 · Verify Copy',
-        'text': (
-            'After copying files to a drive,\n'
-            'run this to confirm nothing was\n'
-            'corrupted. Do this before deleting\n'
-            'the originals!'
-        ),
-    },
-    {
-        'target': 'rename',
+        'target': 'organize',
         'title': 'Utilities',
         'text': (
-            'These tools handle optional steps:\n\n'
-            '  Rename by Date  — tidy filenames\n'
-            '  Find Rejected   — review rejects\n'
-            '  Move Files      — bulk move\n'
-            '  Delete Files    — clean up originals'
+            'Run these as needed:\n\n'
+            '  Split RAW/JPEG — separate mixed folders\n'
+            '  Verify Copy    — checksum before deleting\n'
+            '  Rename by Date — tidy filenames\n'
+            '  Find Rejected  — second-pass review\n'
+            '  Move / Delete  — bulk file management'
         ),
     },
     {
@@ -520,8 +506,8 @@ HOME_TUTORIAL = [
         'text': (
             'Click any tool to get started.\n\n'
             'Each tool page has its own\n'
-            '?  button for a more detailed\n'
-            'walkthrough of that specific tool.'
+            '?  button for a step-by-step\n'
+            'walkthrough of that tool.'
         ),
     },
 ]
@@ -586,12 +572,25 @@ class NavButton(tk.Frame):
                             font=(FN, 8), anchor='w')
         sub_lbl.pack(anchor='w')
 
-        arrow = tk.Label(self, text='›', bg=CARD_BG, fg=MUTED,
-                         font=(FN, 16), padx=14)
-        arrow.pack(side='right')
+        # Right side: step badge for workflow tools, plain arrow for utilities
+        right = tk.Frame(self, bg=CARD_BG, padx=12)
+        right.pack(side='right', fill='y')
+        right_widgets = [right]
+
+        if cfg.get('step'):
+            step_lbl = tk.Label(right, text=f'STEP {cfg["step"]}', bg=CARD_BG,
+                                 fg=cfg['color'], font=(FN, 7, 'bold'))
+            step_lbl.pack(anchor='e', pady=(8, 0))
+            arrow = tk.Label(right, text='›', bg=CARD_BG, fg=MUTED, font=(FN, 14))
+            arrow.pack(anchor='e')
+            right_widgets += [step_lbl, arrow]
+        else:
+            arrow = tk.Label(right, text='›', bg=CARD_BG, fg=MUTED, font=(FN, 16))
+            arrow.pack(expand=True)
+            right_widgets.append(arrow)
 
         # Widgets that change colour on hover (strip excluded intentionally)
-        self._hover_targets = [self, body, title_lbl, sub_lbl, arrow]
+        self._hover_targets = [self, body, title_lbl, sub_lbl] + right_widgets
 
         for w in self._hover_targets:
             w.bind('<Button-1>', lambda e, c=cfg: on_click(c))
@@ -638,22 +637,26 @@ class HomePage(tk.Frame):
         workflow = [t for t in tools if t['group'] == 'workflow']
         utility  = [t for t in tools if t['group'] == 'utility']
 
-        self._build_section(inner, 'Workflow', workflow, on_select)
+        self._build_section(inner, 'Workflow', 'Two steps — run these every shoot.',
+                            workflow, on_select, columns=1)
         tk.Frame(inner, bg=DIVIDER, height=1).pack(fill='x', padx=20, pady=(4, 0))
-        self._build_section(inner, 'Utilities', utility, on_select)
+        self._build_section(inner, 'Utilities', 'Supporting tools — run as needed.',
+                            utility, on_select, columns=2)
 
-    def _build_section(self, parent, label, tools, on_select):
+    def _build_section(self, parent, label, subtitle, tools, on_select, columns=2):
         tk.Label(parent, text=label.upper(), bg=BG, fg=MUTED,
                  font=(FN, 8, 'bold'), anchor='w').pack(
-                     fill='x', padx=20, pady=(16, 6))
+                     fill='x', padx=20, pady=(16, 2))
+        tk.Label(parent, text=subtitle, bg=BG, fg='#52525b',
+                 font=(FN, 8), anchor='w').pack(fill='x', padx=20, pady=(0, 6))
 
         grid = tk.Frame(parent, bg=BG)
         grid.pack(fill='x', padx=14, pady=(0, 4))
-        grid.columnconfigure(0, weight=1, uniform='nav')
-        grid.columnconfigure(1, weight=1, uniform='nav')
+        for c in range(columns):
+            grid.columnconfigure(c, weight=1, uniform='nav')
 
         for i, cfg in enumerate(tools):
-            row, col = divmod(i, 2)
+            row, col = divmod(i, columns)
             btn = NavButton(grid, cfg, on_select)
             btn.grid(row=row, column=col, padx=5, pady=4, sticky='ew')
             self.buttons[cfg['id']] = btn
