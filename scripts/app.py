@@ -68,6 +68,84 @@ _TKEY   = '#FEFEFE'
 
 FN = 'Segoe UI'
 
+# ─────────────────────────── pre-flight validators ────────────────────────────
+# Each validate(vals) returns an error string, or None if OK.
+# Called by ToolPage._run() before the script is launched.
+
+_JPEG_EXTS = {'.jpg', '.jpeg'}
+_RAW_EXTS  = {
+    '.cr3', '.cr2', '.crw', '.nef', '.nrw', '.arw', '.srf', '.sr2',
+    '.raf', '.orf', '.rw2', '.pef', '.dng', '.3fr', '.fff', '.iiq',
+    '.dcr', '.kdc', '.mrw', '.x3f', '.srw', '.rwl',
+}
+
+
+def _validate_pick(v):
+    folder = v.get('folder', '').strip()
+    if not folder or not Path(folder).is_dir():
+        return None  # caught by the general existence check first
+    files = [f for f in Path(folder).iterdir() if f.is_file()]
+    jpegs = [f for f in files if f.suffix.lower() in _JPEG_EXTS]
+    if jpegs:
+        return None
+    raws = [f for f in files if f.suffix.lower() in _RAW_EXTS]
+    if raws:
+        return (
+            f"That folder contains RAW files but no JPEGs.\n\n"
+            f"Pick Photos works with JPEG previews, not RAW files.\n"
+            f"Run  Split RAW/JPEG  first to separate them into subfolders,\n"
+            f"then point Pick Photos at the  jpeg/  subfolder."
+        )
+    if files:
+        return (
+            f"No JPEG files found in that folder ({len(files)} other file(s) present).\n\n"
+            f"Pick Photos works with JPEG previews (.jpg / .jpeg)."
+        )
+    return "That folder is empty."
+
+
+def _validate_get_raws(v):
+    jpeg = v.get('jpeg', '').strip()
+    if jpeg and Path(jpeg).is_dir():
+        picks = [f for f in Path(jpeg).iterdir() if f.is_file()]
+        if not picks:
+            return (
+                "The JPEG picks folder is empty — no files to match against RAWs.\n\n"
+                "Run Pick Photos first to select the JPEGs you want to keep."
+            )
+    return None
+
+
+def _validate_verify(v):
+    src  = v.get('source', '').strip()
+    dest = v.get('dest',   '').strip()
+    if src and dest:
+        try:
+            if Path(src).resolve() == Path(dest).resolve():
+                return "Source and destination are the same folder — nothing to verify."
+        except Exception:
+            pass
+    return None
+
+
+def _validate_rename(v):
+    digits_raw = v.get('counter_digits', '0').strip()
+    start_raw  = v.get('counter_start',  '1').strip()
+    try:
+        d = int(digits_raw)
+        if d < 0:
+            return "Counter digits cannot be negative."
+        if d > 10:
+            return f"Counter digits ({d}) is unusually large. Did you mean a smaller number like 3?"
+    except ValueError:
+        return f"Counter digits must be a whole number (e.g. 0, 3), not \"{digits_raw}\"."
+    try:
+        int(start_raw)
+    except ValueError:
+        return f"Counter start must be a whole number (e.g. 1), not \"{start_raw}\"."
+    return None
+
+
 # ─────────────────────────── tool definitions ─────────────────────────────────
 #
 # Each tool has:
@@ -92,6 +170,8 @@ TOOLS = [
         'color': ACCENT,
         'group': 'workflow',
         'step': 1,
+        'validate': _validate_pick,
+        'launch_msg': 'Photo browser opened — switch to the new window.',
         'inputs': [
             ('folder', 'Photo folder'),
             ('output', 'Output folder  (optional — defaults to folder/selected/)'),
@@ -147,6 +227,7 @@ TOOLS = [
         'color': ACCENT,
         'group': 'workflow',
         'step': 2,
+        'validate': _validate_get_raws,
         'inputs': [
             ('jpeg',   'JPEG picks folder'),
             ('raws',   'RAW source folder'),
@@ -251,6 +332,7 @@ TOOLS = [
         'script': 'verify_copy.py',
         'color': UTIL_CLR,
         'group': 'utility',
+        'validate': _validate_verify,
         'inputs': [
             ('source', 'Source folder'),
             ('dest',   'Destination folder'),
@@ -283,36 +365,82 @@ TOOLS = [
     },
     {
         'id': 'rename',
-        'title': 'Rename by Date',
-        'subtitle': 'Rename files using EXIF shoot date',
+        'title': 'Rename Files',
+        'subtitle': 'Flexible batch rename from EXIF data, counters, and custom text',
         'desc': (
-            'Renames image files from camera names like IMG_1234 to '
-            'readable dates like 2024-07-15_143022, using the EXIF '
-            'DateTimeOriginal tag. Use Dry run to preview before committing.'
+            'Builds new filenames from composable parts: shoot date, time, '
+            'camera model, original name, or custom text — plus an optional '
+            'zero-padded sequence counter.\n\n'
+            'Only run this on folders that are ready to hand off to editing. '
+            'Renaming will break Pick Photos and Get RAWs because they match '
+            'files by their original camera-assigned names.'
         ),
         'script': 'rename_by_date.py',
-        'color': UTIL_CLR,
+        'color': DANGER_CLR,
         'group': 'utility',
+        'danger': True,
+        'danger_warning': (
+            '⚠  Renaming is permanent and will break the workflow tools '
+            '(Pick Photos, Get RAWs). Only run this on a folder that is '
+            'completely ready to send to your editing software.'
+        ),
+        'danger_confirm': 'I understand — this folder is finalised, proceed with renaming',
+        'danger_verb': 'Rename',
+        'validate': _validate_rename,
         'inputs': [('folder', 'Folder to rename')],
-        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no changes made')],
-        'build':  lambda v, fl: [v['folder']] + fl,
+        'dropdowns': [
+            ('primary', 'Primary field',
+             ['Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
+              'Camera model', 'Original name', 'Custom text'],
+             'Date (YYYY-MM-DD)'),
+            ('secondary', 'Secondary field  (optional)',
+             ['None', 'Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
+              'Camera model', 'Original name', 'Custom text'],
+             'None'),
+            ('separator', 'Separator between fields',
+             ['_', '-', '.', ' '],
+             '_'),
+        ],
+        'textfields': [
+            ('custom_primary',   'Custom primary text  (used when "Custom text" is selected above)', ''),
+            ('custom_secondary', 'Custom secondary text  (used when "Custom text" is selected above)', ''),
+            ('counter_digits',   'Counter digits  (0 = no counter,  3 = 001 002 003 …)', '0'),
+            ('counter_start',    'Counter start number', '1'),
+        ],
+        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no files renamed')],
+        'build':  lambda v, fl: (
+            [v['folder']]
+            + ['--primary',          v.get('primary',          'Date (YYYY-MM-DD)')]
+            + ['--secondary',        v.get('secondary',        'None')]
+            + ['--separator',        v.get('separator',        '_')]
+            + (['--custom-primary',   v['custom_primary']]   if v.get('custom_primary')   else [])
+            + (['--custom-secondary', v['custom_secondary']] if v.get('custom_secondary') else [])
+            + ['--counter-digits',   v.get('counter_digits',  '0')]
+            + ['--counter-start',    v.get('counter_start',   '1')]
+            + fl
+        ),
         'detach': False,
         'tutorial': [
             {
                 'target': None,
-                'title': 'Rename by Date',
+                'title': 'Rename Files',
                 'text': (
-                    'Renames files like IMG_1234.CR3\n'
-                    'to 2024-07-15_143022.CR3 using\n'
-                    'the EXIF shoot date.\n\n'
-                    'Always tick Dry run first to\n'
-                    'preview without making changes.'
+                    'Builds new filenames from composable\n'
+                    'parts — date, camera, original name,\n'
+                    'custom text, or a counter.\n\n'
+                    'Only use on final output folders.\n'
+                    'Renaming breaks Pick Photos\n'
+                    'and Get RAWs.'
                 ),
             },
             {
                 'target': 'folder',
                 'title': 'Select folder',
-                'text': 'Choose the folder of files to rename.',
+                'text': (
+                    'Choose the folder of files to rename.\n\n'
+                    'Tip: always tick Dry run first to\n'
+                    'preview without making any changes.'
+                ),
             },
         ],
     },
@@ -548,6 +676,51 @@ class FolderInput(tk.Frame):
         return self._var.get().strip()
 
 
+# ─────────────────────────── TextInput ───────────────────────────────────────
+
+class TextInput(tk.Frame):
+    """Label + plain text entry (no browse button)."""
+
+    def __init__(self, parent, label, placeholder='', **kw):
+        super().__init__(parent, bg=BG, **kw)
+        tk.Label(self, text=label, bg=BG, fg=MUTED,
+                 font=(FN, 8)).pack(anchor='w')
+        self._var = tk.StringVar(value=placeholder)
+        tk.Entry(self, textvariable=self._var, bg=CARD_BG, fg=TEXT,
+                 insertbackground=TEXT, relief='flat',
+                 font=(FN, 9), bd=8).pack(fill='x', ipady=2)
+
+    def get(self):
+        return self._var.get().strip()
+
+
+# ─────────────────────────── DropdownInput ───────────────────────────────────
+
+class DropdownInput(tk.Frame):
+    """Label + OptionMenu dropdown."""
+
+    def __init__(self, parent, label, choices, default=None, **kw):
+        super().__init__(parent, bg=BG, **kw)
+        tk.Label(self, text=label, bg=BG, fg=MUTED,
+                 font=(FN, 8)).pack(anchor='w')
+        self._var = tk.StringVar(value=default if default is not None else choices[0])
+        menu = tk.OptionMenu(self, self._var, *choices)
+        menu.config(
+            bg=CARD_BG, fg=TEXT, relief='flat', bd=0,
+            activebackground=HOVER_BG, activeforeground=TEXT,
+            font=(FN, 9), highlightthickness=0, cursor='hand2',
+        )
+        menu['menu'].config(
+            bg=CARD_BG, fg=TEXT,
+            activebackground=ACCENT, activeforeground='white',
+            font=(FN, 9),
+        )
+        menu.pack(fill='x', ipady=3)
+
+    def get(self):
+        return self._var.get()
+
+
 # ─────────────────────────── NavButton ───────────────────────────────────────
 
 class NavButton(tk.Frame):
@@ -697,6 +870,20 @@ class ToolPage(tk.Frame):
             fi.pack(fill='x', pady=4)
             self._inputs[key] = fi
 
+        # Dropdown option inputs
+        self._dropdowns = {}
+        for key, label, choices, default in cfg.get('dropdowns', []):
+            dd = DropdownInput(content, label, choices, default)
+            dd.pack(fill='x', pady=(8, 0))
+            self._dropdowns[key] = dd
+
+        # Plain text inputs
+        self._textfields = {}
+        for key, label, placeholder in cfg.get('textfields', []):
+            tf = TextInput(content, label, placeholder)
+            tf.pack(fill='x', pady=(8, 0))
+            self._textfields[key] = tf
+
         # Flag checkboxes
         for key, flag, label in cfg.get('flags', []):
             var = tk.BooleanVar()
@@ -711,13 +898,16 @@ class ToolPage(tk.Frame):
         # Danger confirmation checkbox
         self._confirmed = None
         if cfg.get('danger'):
+            warn_text    = cfg.get('danger_warning',
+                                   '⚠  This will permanently delete files. This cannot be undone.')
+            confirm_text = cfg.get('danger_confirm', 'I understand — proceed with deletion')
             tk.Frame(content, bg=DANGER_CLR, height=1).pack(fill='x', pady=(16, 8))
-            tk.Label(content,
-                     text='⚠  This will permanently delete files. This cannot be undone.',
-                     bg=BG, fg=DANGER_CLR, font=(FN, 9), anchor='w').pack(anchor='w')
+            tk.Label(content, text=warn_text,
+                     bg=BG, fg=DANGER_CLR, font=(FN, 9), anchor='w',
+                     wraplength=520, justify='left').pack(anchor='w')
             self._confirmed = tk.BooleanVar()
             tk.Checkbutton(
-                content, text='I understand — proceed with deletion',
+                content, text=confirm_text,
                 variable=self._confirmed,
                 bg=BG, fg=TEXT, selectcolor=BTN_BG,
                 activebackground=BG, activeforeground=TEXT,
@@ -729,7 +919,8 @@ class ToolPage(tk.Frame):
         run_row = tk.Frame(content, bg=BG)
         run_row.pack(fill='x', pady=(20, 8))
 
-        btn_color = DANGER_CLR if cfg.get('danger') else cfg['color']
+        btn_color  = DANGER_CLR if cfg.get('danger') else cfg['color']
+        danger_verb = cfg.get('danger_verb', 'Delete')
         self._run_btn = tk.Button(
             run_row, text='Run', bg=btn_color, fg='white', relief='flat',
             font=(FN, 10, 'bold'), cursor='hand2', bd=0, padx=24, pady=7,
@@ -738,7 +929,7 @@ class ToolPage(tk.Frame):
         )
         self._run_btn.pack(side='left')
         if cfg.get('danger'):
-            self._run_btn.config(state='disabled', text='Delete')
+            self._run_btn.config(state='disabled', text=danger_verb)
 
         self._status_var = tk.StringVar()
         self._status_lbl = tk.Label(run_row, textvariable=self._status_var,
@@ -775,12 +966,37 @@ class ToolPage(tk.Frame):
 
     def _run(self):
         vals  = {key: fi.get() for key, fi in self._inputs.items()}
+        vals.update({key: dd.get() for key, dd in self._dropdowns.items()})
+        vals.update({key: tf.get() for key, tf in self._textfields.items()})
         flags = [flag for _, (var, flag) in self._flag_vars.items() if var.get()]
 
         input_labels = {e[0]: e[1] for e in self._cfg['inputs']}
+
+        # Required fields filled in?
         for key, fi in self._inputs.items():
             if not fi.get() and 'optional' not in input_labels[key].lower():
                 self._set_status('Fill in all required folders first.', ERROR_CLR)
+                return
+
+        # All supplied folder paths exist on disk?
+        for key, fi in self._inputs.items():
+            path = fi.get()
+            if path and not Path(path).is_dir():
+                label = input_labels[key].split('(')[0].strip()
+                messagebox.showwarning(
+                    'Folder Not Found',
+                    f'The folder for "{label}" does not exist:\n\n{path}',
+                    parent=self.winfo_toplevel(),
+                )
+                return
+
+        # Tool-specific pre-flight check
+        _validate = self._cfg.get('validate')
+        if _validate:
+            err = _validate(vals)
+            if err:
+                messagebox.showwarning('Cannot Run', err,
+                                       parent=self.winfo_toplevel())
                 return
 
         args = self._cfg['build'](vals, flags)
@@ -792,10 +1008,11 @@ class ToolPage(tk.Frame):
 
         if self._cfg.get('detach'):
             subprocess.Popen(cmd)
-            self._set_status('Launched.', SUCCESS)
+            self._set_status(self._cfg.get('launch_msg', 'Launched.'), SUCCESS)
         else:
-            self._run_btn.config(state='disabled',
-                                  text='Running…' if not self._cfg.get('danger') else 'Deleting…')
+            _verb = self._cfg.get('danger_verb', 'Delete') if self._cfg.get('danger') else None
+            _running_text = f"{_verb}ing…" if _verb else 'Running…'
+            self._run_btn.config(state='disabled', text=_running_text)
             self._set_status('', MUTED)
             self._clear_log()
             threading.Thread(target=self._run_thread, args=(cmd,), daemon=True).start()
@@ -817,10 +1034,11 @@ class ToolPage(tk.Frame):
         finally:
             def _reset():
                 if self._cfg.get('danger'):
-                    # Re-lock after a delete — require re-confirmation
+                    # Re-lock after running — require re-confirmation
                     if self._confirmed:
                         self._confirmed.set(False)
-                    self._run_btn.config(state='disabled', text='Delete')
+                    _verb = self._cfg.get('danger_verb', 'Delete')
+                    self._run_btn.config(state='disabled', text=_verb)
                 else:
                     self._run_btn.config(state='normal', text='Run')
             self._run_btn.after(0, _reset)
@@ -1150,6 +1368,13 @@ class App:
 
 def main():
     root = tk.Tk()
+    # Size and center the window before showing anything
+    w, h = 840, 780
+    root.geometry(f'{w}x{h}')
+    root.update_idletasks()
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    root.geometry(f'{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}')
     App(root)
     root.mainloop()
 
