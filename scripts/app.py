@@ -364,87 +364,6 @@ TOOLS = [
         ],
     },
     {
-        'id': 'rename',
-        'title': 'Rename Files',
-        'subtitle': 'Flexible batch rename from EXIF data, counters, and custom text',
-        'desc': (
-            'Builds new filenames from composable parts: shoot date, time, '
-            'camera model, original name, or custom text — plus an optional '
-            'zero-padded sequence counter.\n\n'
-            'Only run this on folders that are ready to hand off to editing. '
-            'Renaming will break Pick Photos and Get RAWs because they match '
-            'files by their original camera-assigned names.'
-        ),
-        'script': 'rename_by_date.py',
-        'color': DANGER_CLR,
-        'group': 'utility',
-        'danger': True,
-        'danger_warning': (
-            '⚠  Renaming is permanent and will break the workflow tools '
-            '(Pick Photos, Get RAWs). Only run this on a folder that is '
-            'completely ready to send to your editing software.'
-        ),
-        'danger_confirm': 'I understand — this folder is finalised, proceed with renaming',
-        'danger_verb': 'Rename',
-        'validate': _validate_rename,
-        'inputs': [('folder', 'Folder to rename')],
-        'dropdowns': [
-            ('primary', 'Primary field',
-             ['Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
-              'Camera model', 'Original name', 'Custom text'],
-             'Date (YYYY-MM-DD)'),
-            ('secondary', 'Secondary field  (optional)',
-             ['None', 'Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
-              'Camera model', 'Original name', 'Custom text'],
-             'None'),
-            ('separator', 'Separator between fields',
-             ['_', '-', '.', ' '],
-             '_'),
-        ],
-        'textfields': [
-            ('custom_primary',   'Custom primary text  (used when "Custom text" is selected above)', ''),
-            ('custom_secondary', 'Custom secondary text  (used when "Custom text" is selected above)', ''),
-            ('counter_digits',   'Counter digits  (0 = no counter,  3 = 001 002 003 …)', '0'),
-            ('counter_start',    'Counter start number', '1'),
-        ],
-        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no files renamed')],
-        'build':  lambda v, fl: (
-            [v['folder']]
-            + ['--primary',          v.get('primary',          'Date (YYYY-MM-DD)')]
-            + ['--secondary',        v.get('secondary',        'None')]
-            + ['--separator',        v.get('separator',        '_')]
-            + (['--custom-primary',   v['custom_primary']]   if v.get('custom_primary')   else [])
-            + (['--custom-secondary', v['custom_secondary']] if v.get('custom_secondary') else [])
-            + ['--counter-digits',   v.get('counter_digits',  '0')]
-            + ['--counter-start',    v.get('counter_start',   '1')]
-            + fl
-        ),
-        'detach': False,
-        'tutorial': [
-            {
-                'target': None,
-                'title': 'Rename Files',
-                'text': (
-                    'Builds new filenames from composable\n'
-                    'parts — date, camera, original name,\n'
-                    'custom text, or a counter.\n\n'
-                    'Only use on final output folders.\n'
-                    'Renaming breaks Pick Photos\n'
-                    'and Get RAWs.'
-                ),
-            },
-            {
-                'target': 'folder',
-                'title': 'Select folder',
-                'text': (
-                    'Choose the folder of files to rename.\n\n'
-                    'Tip: always tick Dry run first to\n'
-                    'preview without making any changes.'
-                ),
-            },
-        ],
-    },
-    {
         'id': 'diff',
         'title': 'Find Rejected',
         'subtitle': 'Copy photos that were not selected',
@@ -529,6 +448,87 @@ TOOLS = [
                 'text': (
                     'Where the files will be moved to.\n'
                     'Will be created if it does not exist.'
+                ),
+            },
+        ],
+    },
+    {
+        'id': 'rename',
+        'title': 'Rename Files',
+        'subtitle': 'Flexible batch rename from EXIF data, counters, and custom text',
+        'desc': (
+            'Builds new filenames from composable parts: shoot date, time, '
+            'camera model, original name, or custom text — plus an optional '
+            'zero-padded sequence counter.\n\n'
+            'Only run this on folders that are ready to hand off to editing. '
+            'Renaming will break Pick Photos and Get RAWs because they match '
+            'files by their original camera-assigned names.'
+        ),
+        'script': 'rename_by_date.py',
+        'color': DANGER_CLR,
+        'group': 'utility',
+        'danger': True,
+        'danger_warning': (
+            '⚠  Renaming is permanent and will break the workflow tools '
+            '(Pick Photos, Get RAWs). Only run this on a folder that is '
+            'completely ready to send to your editing software.'
+        ),
+        'danger_confirm': 'I understand — this folder is finalised, proceed with renaming',
+        'danger_verb': 'Rename',
+        'validate': _validate_rename,
+        'inputs': [('folder', 'Folder to rename')],
+        'dropdowns': [
+            ('primary', 'Primary field',
+             ['Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
+              'Camera model', 'Original name', 'Custom text'],
+             'Date (YYYY-MM-DD)'),
+            ('secondary', 'Secondary field  (optional)',
+             ['None', 'Date (YYYY-MM-DD)', 'Date + Time', 'Time (HHMMSS)',
+              'Camera model', 'Original name', 'Custom text'],
+             'None'),
+            ('separator', 'Separator between fields',
+             ['_', '-', '.', ' '],
+             '_'),
+        ],
+        'textfields': [
+            ('custom_primary',   'Custom primary text  (used when "Custom text" is selected above)', ''),
+            ('custom_secondary', 'Custom secondary text  (used when "Custom text" is selected above)', ''),
+            ('counter_digits',   'Counter digits  (0 = no counter,  3 = 001 002 003 …)', '0'),
+            ('counter_start',    'Counter start number', '1'),
+        ],
+        'flags':  [('dry_run', '--dry-run', 'Dry run — preview only, no files renamed')],
+        'build':  lambda v, fl: (
+            [v['folder']]
+            + ['--primary',          v.get('primary',          'Date (YYYY-MM-DD)')]
+            + ['--secondary',        v.get('secondary',        'None')]
+            + ['--separator',        v.get('separator',        '_')]
+            + (['--custom-primary',   v['custom_primary']]   if v.get('custom_primary')   else [])
+            + (['--custom-secondary', v['custom_secondary']] if v.get('custom_secondary') else [])
+            + ['--counter-digits',   v.get('counter_digits',  '0')]
+            + ['--counter-start',    v.get('counter_start',   '1')]
+            + fl
+        ),
+        'detach': False,
+        'tutorial': [
+            {
+                'target': None,
+                'title': 'Rename Files',
+                'text': (
+                    'Builds new filenames from composable\n'
+                    'parts — date, camera, original name,\n'
+                    'custom text, or a counter.\n\n'
+                    'Only use on final output folders.\n'
+                    'Renaming breaks Pick Photos\n'
+                    'and Get RAWs.'
+                ),
+            },
+            {
+                'target': 'folder',
+                'title': 'Select folder',
+                'text': (
+                    'Choose the folder of files to rename.\n\n'
+                    'Tip: always tick Dry run first to\n'
+                    'preview without making any changes.'
                 ),
             },
         ],
@@ -1369,7 +1369,7 @@ class App:
 def main():
     root = tk.Tk()
     # Size and center the window before showing anything
-    w, h = 840, 780
+    w, h = 840, 830
     root.geometry(f'{w}x{h}')
     root.update_idletasks()
     sw = root.winfo_screenwidth()
